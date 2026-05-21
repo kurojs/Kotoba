@@ -498,10 +498,21 @@ async function playElevenLabsAudio(
   text: string,
   apiKey: string,
   voiceId: string,
+  language?: string,
 ): Promise<void> {
   if (!apiKey) {
     throw new Error("ElevenLabs API key not configured");
   }
+
+  const body: Record<string, any> = {
+    text,
+    model_id: "eleven_multilingual_v2",
+    voice_settings: {
+      stability: 0.5,
+      similarity_boost: 0.5,
+    },
+  };
+  if (language) body.language = language;
 
   const res = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
@@ -511,14 +522,7 @@ async function playElevenLabsAudio(
         "xi-api-key": apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.5,
-        },
-      }),
+      body: JSON.stringify(body),
     },
   );
 
@@ -1190,6 +1194,7 @@ function WordListItem({
                   text,
                   preferences.elevenlabsApiKey,
                   preferences.elevenlabsVoiceId,
+                  "ja",
                 );
                 await showToast({
                   style: Toast.Style.Success,
@@ -1450,6 +1455,7 @@ export default function Command() {
                             debouncedText,
                             preferences.elevenlabsApiKey,
                             preferences.elevenlabsVoiceId,
+                            "ja",
                           );
                           await showToast({
                             style: Toast.Style.Success,
