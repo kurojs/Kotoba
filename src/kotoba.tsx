@@ -1452,7 +1452,7 @@ export default function Command() {
                       onAction={async () => {
                         try {
                           await playElevenLabsAudio(
-                            debouncedText,
+                            results.words[0]?.reading?.kana || debouncedText,
                             preferences.elevenlabsApiKey,
                             preferences.elevenlabsVoiceId,
                             "ja",
