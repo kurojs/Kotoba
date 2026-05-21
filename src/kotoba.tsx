@@ -40,7 +40,6 @@ const UI: Record<string, Record<string, string>> = {
     pitch: "Pitch",
     onyomi: "On'yomi",
     kunyomi: "Kun'yomi",
-    strokeOrder: "Stroke Order",
     grade: "Grade",
     strokes: "strokes",
     freq: "Freq",
@@ -70,7 +69,6 @@ const UI: Record<string, Record<string, string>> = {
     alreadyInDeck: "Ya está en el mazo",
     alreadyInDeckMsg: "\"{deck}\" already has this card",
     errorAdding: "Error adding to Anki",
-    errorAddingMsg: "{msg}",
     failPlayAudio: "Failed to play audio",
     copyResponse: "Copy Response",
     explainWithAI: "Explain with AI",
@@ -83,7 +81,6 @@ const UI: Record<string, Record<string, string>> = {
     pitch: "Acento",
     onyomi: "On'yomi",
     kunyomi: "Kun'yomi",
-    strokeOrder: "Orden de Trazos",
     grade: "Grado",
     strokes: "trazos",
     freq: "Frec",
@@ -113,7 +110,6 @@ const UI: Record<string, Record<string, string>> = {
     alreadyInDeck: "Ya está en el mazo",
     alreadyInDeckMsg: "\"{deck}\" ya tiene esta tarjeta",
     errorAdding: "Error al agregar",
-    errorAddingMsg: "{msg}",
     failPlayAudio: "Error al reproducir audio",
     copyResponse: "Copiar Respuesta",
     explainWithAI: "Explicar con IA",
@@ -284,12 +280,11 @@ async function translateViaGoogle(
 
 async function translateText(
   text: string,
-  from: string,
   to: string,
 ): Promise<string | null> {
   try {
     const res = await fetch(
-      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`,
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${to}&dt=t&q=${encodeURIComponent(text)}`,
     );
     if (!res.ok) return null;
     const data = (await res.json()) as any;
@@ -625,7 +620,7 @@ function formatPOS(
     Interjection: "Interjection",
     Pronoun: "Pronoun",
     Conjunction: "Conjunction",
-    AuxilaryVerb: "Auxiliary Verb",
+    AuxiliaryVerb: "Auxiliary Verb",
     Expr: "Expression",
     Counter: "Counter",
     Numeric: "Numeric",
@@ -899,7 +894,6 @@ function KanjiListItem({
     let cancelled = false;
     translateText(
       kanji.meanings.join(", "),
-      "en",
       LANGUAGE_CODE_MAP[lang] || "en",
     ).then((t) => {
       if (!cancelled && t) setTranslatedMeaning(t);
@@ -1057,7 +1051,7 @@ function WordListItem({
   useEffect(() => {
     let cancelled = false;
     const query = word.reading.kanji || word.reading.kana;
-    if (!query || sentences.length > 0 || sentencesLoading) return;
+    if (!query) return;
     setSentencesLoading(true);
     (async () => {
       const raw = await fetchSentences(query, lang);
@@ -1075,7 +1069,7 @@ function WordListItem({
           const code = LANGUAGE_CODE_MAP[lang] || "en";
           for (const p of pending) {
             if (cancelled) return;
-            const t = await translateText(p.s.translation, "en", code);
+            const t = await translateText(p.s.translation, code);
             if (t) result[p.i] = { ...result[p.i], translation: t };
           }
         }
@@ -1093,7 +1087,6 @@ function WordListItem({
     let cancelled = false;
     translateText(
       sense.glosses.join("; "),
-      "en",
       LANGUAGE_CODE_MAP[lang] || "en",
     ).then((t) => {
       if (!cancelled && t) setTranslatedGlosses(t.split(/;\s*/));

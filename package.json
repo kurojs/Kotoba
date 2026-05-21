@@ -8,7 +8,8 @@
   "categories": ["Productivity", "Education"],
   "commands": [
     {
-      "name": "kotoba",
+  "name": "kotoba",
+  "version": "2026.05.21",
       "title": "Kotoba",
       "subtitle": "Japanese Dictionary & Translator",
       "description": "Search Jotoba for words, kanji, and sentences; add to Anki; TTS with ElevenLabs",

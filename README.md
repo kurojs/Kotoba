@@ -1,98 +1,111 @@
-# Kotoba (言葉)
-
-> A Vicinae extension that combines Japanese dictionary lookup via [Jotoba](https://jotoba.de), sentence translation, and one-click Anki card creation with ElevenLabs text-to-speech.
-
-Search any Japanese word, kanji, or full sentence — get instant definitions, readings, furigana breakdown, part-of-speech analysis, and example sentences — then push the result to Anki with a single keystroke.
-
----
-
-## Features
-
-- **Sentence Translation** — Paste a full Japanese sentence and get the translation plus furigana readings for every kanji, powered by Jotoba's Tatoeba corpus
-- **Bilingual Definitions** — Results in your preferred language (Spanish, English, German, etc.) with automatic English fallback
-- **Kanji Analysis** — Stroke count, JLPT level, grade, on'yomi/kun'yomi readings, radical decomposition, and stroke order diagrams
-- **Example Sentences** — Contextual sentences with translations, fetched on-demand when viewing word details
-- **Anki Integration** — One-click card creation (`⌘A`) using AnkiConnect with per-deck duplicate detection. Shares configuration with the [Japanese Translator](https://github.com/kurojs/vicinae-japanese-translator) extension
-- **ElevenLabs TTS** — High-quality Japanese text-to-speech playback (`⌘P`) via the ElevenLabs API
-- **Pitch Accent** — Visual pitch accent indicators for words (when available from Jotoba)
-- **Clipboard Integration** — Auto-loads selected text on launch; copy word, reading, or definition with keyboard shortcuts
-- **Debounced Search** — 500ms debounce to minimise API calls while typing
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Vicinae (Raycast-compatible Launcher)        │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                Kotoba (TSX → JS bundle)                      │   │
-│  │                                                              │   │
-│  │  ┌─────────────┐    ┌──────────────┐    ┌────────────────┐  │   │
-│  │  │ Search View  │───▶│  Detail View  │───▶│  Action Panel   │  │   │
-│  │  │ (List +      │    │ (Markdown +   │    │ (Anki, Audio,   │  │   │
-│  │  │  Sections)   │    │  Metadata)    │    │  Copy, Open)    │  │   │
-│  │  └──────┬───────┘    └──────┬────────┘    └────────┬───────┘  │   │
-│  │         │                   │                       │          │   │
-│  │         ▼                   ▼                       ▼          │   │
-│  │  ┌─────────────────────────────────────────────────────────┐   │   │
-│  │  │                    API Layer                             │   │   │
-│  │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │   │   │
-│  │  │  │ Jotoba Words │  │ Jotoba Kanji │  │ Jotoba Sents │   │   │   │
-│  │  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘   │   │   │
-│  │  └─────────────────────────────────────────────────────────┘   │   │
-│  │                                                                     │
-│  │  HTTP ─────────▶ jotoba.de/api ──────────── REST API                │
-│  │  HTTP ─────────▶ localhost:8765  ────────── AnkiConnect             │
-│  │  HTTPS ────────▶ api.elevenlabs.io ──────── ElevenLabs TTS API      │
-│  └─────────────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-1. **Search** — User types a query → 500ms debounce → parallel requests to `/api/search/words`, `/api/search/kanji`, and `/api/search/sentences`
-2. **Translation Header** — If the query is a sentence (≥20 chars or 3+ words), a translation section appears at the top with the sentence's furigana breakdown and translation
-3. **Display** — Results rendered in sections (`Translation`, `Words`, `Kanji`) with inline detail markdown
-4. **Detail Expansion** — Selecting a word triggers a lazy fetch to `/api/search/sentences` for example sentences relevant to that word
-5. **Anki Export** — `⌘A` builds a note from the word data, validates AnkiConnect connectivity, resolves the target model's field schema dynamically, checks for duplicates within the target deck only, and ships the card via AnkiConnect's `addNote` API
-6. **Audio Playback** — `⌘P` streams text-to-speech via ElevenLabs API (multilingual model), saves a temp MP3, and plays it through the system's default audio player (ffplay → mpv → afplay)
+<div align="center">
+  <img src="https://i.imgur.com/ji48awU.png" width="80" alt="Kotoba Icon" />
+  <h1>
+    <pre>
+╭━━━╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╭╋╯╰╮╋╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╰╮╱╱╭╯╋╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╰╮╱╱╰╯╋╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╰╮╱╱╰╯╋━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╰╮╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╰╮╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╰╮╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╫╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╋╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╋╮╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╋╮╰╮╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╋╮╰╮╰╮╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╋╮╰╮╰╮╰╮╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╋╮╰╮╰╮╰╮╰╮╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰╮╱╱╱╱╱╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╭╋╯╰╮╋╮╰╮╰╮╰╮╰╮╰╮╰╮╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱
+    </pre>
+  </h1>
+  <p><strong>言葉</strong> — Japanese dictionary, translator, and Anki integration for Vicinae</p>
+  <p>Search Jotoba for words, kanji, and sentences. Translate on the fly. Add cards to Anki with one click. All inside your launcher.</p>
+</div>
 
 ---
 
-## Prerequisites
+## ✨ Features
 
-| Dependency | Required | Notes |
-|-----------|----------|-------|
-| [Vicinae](https://github.com/vicinaehq/vicinae) | Yes | Raycast-compatible launcher for Linux. Install via AUR: `yay -S vicinae-bin` |
-| [Anki](https://apps.ankiweb.net) with [AnkiConnect](https://foosoft.net/projects/anki-connect/) | For Anki features | Anki must be running. AnkiConnect plugin code: `2055492159` |
-| [ElevenLabs](https://elevenlabs.io) API Key | For TTS audio | Optional. Configure in extension settings |
-| `ffplay` (ffmpeg) or `mpv` | For audio playback | Install: `sudo pacman -S ffmpeg` or `sudo pacman -S mpv` |
+| Section | Description |
+|---------|-------------|
+| **🔍 Word Search** | Look up any Japanese word — get definitions, readings, pitch accent, part-of-speech, and example sentences |
+| **🈳 Kanji Analysis** | Stroke order diagrams, JLPT level, grade, frequency, radical decomposition, and on'yomi/kun'yomi readings |
+| **🌐 Translation** | Google Translate integration for instant Japanese → your language translations, with relevant images from Wikimedia Commons |
+| **🧠 AI Explanations** | Gemini-powered explanations for words, kanji, and phrases — customize the language and model |
+| **🗂️ Anki Export** | One-click card creation (`⌘A`) with per-deck duplicate detection. Smart field mapping works with any note type |
+| **🔊 Text-to-Speech** | ElevenLabs multilingual TTS — hear Japanese pronunciation with a single keystroke (`⌘P`) |
+| **📋 Clipboard** | Auto-loads selected text on launch; copy word, reading, or definition with keyboard shortcuts |
 
-### Verifying Prerequisites
+---
+
+## 📸 Screenshots
+
+### Main Search
+<div align="center">
+  <table>
+    <tr>
+      <td><img src="https://i.imgur.com/mywPeg3.png" width="400" alt="Word Search"/></td>
+      <td><img src="https://i.imgur.com/49tjSXY.png" width="400" alt="Kanji & Stroke Order"/></td>
+    </tr>
+    <tr>
+      <td align="center"><em>Word results with meanings, readings, and pitch accent</em></td>
+      <td align="center"><em>Kanji detail with stroke order diagram, JLPT level, and radicals</em></td>
+    </tr>
+    <tr>
+      <td><img src="https://i.imgur.com/zSiHWWu.png" width="400" alt="Translation"/></td>
+      <td><img src="https://i.imgur.com/FpsZV0h.png" width="400" alt="AI Explanation"/></td>
+    </tr>
+    <tr>
+      <td align="center"><em>Instant translation with contextual image from Wikimedia Commons</em></td>
+      <td align="center"><em>Gemini AI explains words and kanji in your language</em></td>
+    </tr>
+  </table>
+</div>
+
+### Preferences
+<div align="center">
+  <table>
+    <tr>
+      <td><img src="https://i.imgur.com/spL4qJ0.png" width="250" alt="Settings 1"/></td>
+      <td><img src="https://i.imgur.com/e7jogMu.png" width="250" alt="Settings 2"/></td>
+      <td><img src="https://i.imgur.com/qXxmvBU.png" width="250" alt="Settings 3"/></td>
+    </tr>
+    <tr>
+      <td align="center"><em>General & Anki settings</em></td>
+      <td align="center"><em>TTS & Translation settings</em></td>
+      <td align="center"><em>AI & advanced settings</em></td>
+    </tr>
+  </table>
+</div>
+
+---
+
+## 📦 Installation
+
+### AUR (recommended)
 
 ```bash
-# AnkiConnect
-curl -X POST http://localhost:8765 \
-  -H "Content-Type: application/json" \
-  -d '{"action": "version", "version": 6}'
-# Expected: {"result": 6, "error": null}
+yay -S vicinae-kotoba
 ```
 
----
-
-## Installation
-
-### From AUR (recommended)
-
-```bash
-yay -S kotoba
-```
-
-### From Source
+### From source
 
 ```bash
 # Clone
-git clone git@github.com:kurojs/vicinae-jotoba-anki.git
+git clone https://github.com/kurojs/vicinae-jotoba-anki.git
 cd vicinae-jotoba-anki
 
 # Install dependencies
@@ -102,140 +115,150 @@ npm install
 npm run build
 ```
 
-The built extension is automatically installed to `~/.local/share/vicinae/extensions/kotoba/`.
+The extension is automatically installed to `~/.local/share/vicinae/extensions/kotoba/`. No server restart needed.
 
-### Development Mode
+### Requirements
+
+| Dependency | Required | Notes |
+|-----------|----------|-------|
+| [Vicinae](https://github.com/vicinaehq/vicinae) | ✅ Yes | Launcher. Install via `yay -S vicinae-bin` or from GitHub releases |
+| [Anki](https://apps.ankiweb.net) + [AnkiConnect](https://foosoft.net/projects/anki-connect/) | Optional | For Anki export features. AnkiConnect plugin code: `2055492159` |
+| [ElevenLabs](https://elevenlabs.io) API key | Optional | For text-to-speech. Get a free API key at elevenlabs.io |
+| `ffplay` (ffmpeg) or `mpv` | Optional | For audio playback: `sudo pacman -S ffmpeg` or `sudo pacman -S mpv` |
+| [Gemini](https://aistudio.google.com/) API key | Optional | For AI-powered explanations. Free tier available |
+
+### Verifying installation
 
 ```bash
-npm run dev
+# Check if extension is installed
+ls ~/.local/share/vicinae/extensions/kotoba/
+
+# Test AnkiConnect (if using Anki)
+curl -X POST http://localhost:8765 \
+  -H "Content-Type: application/json" \
+  -d '{"action": "version", "version": 6}'
+# Expected: {"result": 6, "error": null}
 ```
 
-This starts a file watcher that rebuilds on every change.
+---
+
+## ⚙️ Configuration
+
+Access preferences through Vicinae's extension settings panel (`Extensions → Kotoba → Preferences`).
+
+### General
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| **Definition Language** | `Spanish` | Language for Jotoba definitions (English, Spanish, German, French, Russian, Swedish, Dutch, Hungarian, Slovenian) |
+| **Auto-load Text** | `true` | Automatically load selected/clipboard text when Kotoba opens |
+
+### Anki
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| **Anki Deck Name** | `CUSTOM TRANSLATE` | Target deck for card creation |
+| **Anki Note Type** | `Basic-d5482` | Note model — dynamically maps Front/Back fields |
+| **AnkiConnect Port** | `8765` | Local port for AnkiConnect API |
+| **Include Image in Anki Card** | `false` | Appends the translation image to the card back |
+
+### Text-to-Speech
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| **ElevenLabs API Key** | — | Your API key for TTS. Get one at elevenlabs.io |
+| **ElevenLabs Voice ID** | `21m00Tcm4TlvDq8ikWAM` | Voice for word pronunciation (default: Rachel). Use a Japanese voice for best results |
+
+### Translation Images
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| **Show Translation Image** | `false` | Shows a relevant image from Wikimedia Commons below translations |
+
+### AI Explanations
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| **Gemini API Key** | — | API key from Google AI Studio. Required for AI features |
+| **AI Model** | `gemini-2.5-flash` | Gemini model. 14 models available including Pro and Flash variants |
+| **AI Response Language** | `Spanish` | Language for AI explanations. 21 languages supported |
+| **Custom AI Prompt** | — | Extra instructions for the AI (personality, format, focus areas) |
+| **AI Voice ID** | `21m00Tcm4TlvDq8ikWAM` | ElevenLabs voice for reading AI responses aloud |
 
 ---
 
-## Configuration
-
-Access preferences through Vicinae's extension settings panel.
-
-| Setting | Key | Default | Description |
-|---------|-----|---------|-------------|
-| **Definition Language** | `userLanguage` | `Spanish` | Language for word definitions (English, Spanish, German, etc.) |
-| **Anki Deck** | `ankiDeck` | `CUSTOM TRANSLATE` | Target Anki deck name |
-| **Anki Note Model** | `ankiModel` | `Basic-d5482` | Note type for card creation |
-| **AnkiConnect Port** | `ankiPort` | `8765` | AnkiConnect API port |
-| **ElevenLabs API Key** | `elevenlabsApiKey` | — | API key for ElevenLabs TTS. Get yours at [elevenlabs.io](https://elevenlabs.io) |
-| **ElevenLabs Voice ID** | `elevenlabsVoiceId` | `21m00Tcm4TlvDq8ikWAM` | Voice ID (default: Rachel). Browse voices at [elevenlabs.io](https://elevenlabs.io) |
-| **Show Translation Image** | `showTranslationImage` | `false` | Show a Google image below the translation (requires GCS API) |
-| **Google Custom Search Key** | `gcsApiKey` | — | API key for Google Custom Search Image. Get one at [console.cloud.google.com](https://console.cloud.google.com) |
-| **Google Search Engine ID** | `gcsCxId` | — | Search Engine ID (cx) for Google CSE. Create at [cse.google.com](https://cse.google.com/cse/) |
-| **Auto-load Text** | `autoLoadText` | `true` | Automatically load clipboard text on launch |
-
-### Anki Note Mapping
-
-The extension dynamically resolves the target model's field schema at export time. It attempts to match fields by convention:
-
-| Card Side | Lookup Order |
-|-----------|-------------|
-| **Front** | `Front` → `Expression` → `Word` → `fields[0]` |
-| **Back** | `Back` → `Meaning` → `Translation` → `fields[1]` |
-
-Cards are tagged with `vicinae`, `japanese`, `kotoba`. Duplicate detection is scoped to the target deck only (you can add the same word to different decks).
-
----
-
-## Usage
-
-### Basic Workflow
-
-1. Launch Vicinae and type "Kotoba" (or your configured hotkey)
-2. Type a Japanese word, kanji, or full sentence in the search bar
-3. **For sentences:** See the translation and furigana breakdown at the top, plus word-by-word analysis below
-4. **For words:** Browse results across Words and Kanji sections
-5. Select a result to view full details — definitions, readings, example sentences, pitch accent
-6. Press `⌘A` to add a card to Anki, or `⌘P` to hear pronunciation
+## ⌨️ Usage
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `⌘A` | Add selected word/kanji/sentence to Anki |
-| `⌘P` | Play ElevenLabs audio |
+| `⌘A` | Add current item to Anki |
+| `⌘P` | Play audio pronunciation |
+| `Tab` | Explain with AI |
 | `⌘C` | Copy word/kanji to clipboard |
-| `⌘⇧C` | Copy definition/meanings to clipboard |
+| `⌘⇧C` | Copy definition/meanings |
+
+### Workflow
+
+1. Launch Vicinae and search for "Kotoba"
+2. Type a Japanese word, kanji, or phrase
+3. **Translation section** appears at the top if Google Translate has results
+4. **Words** and **Kanji** sections show Jotoba dictionary results
+5. Select any result to see full details
+6. `⌘A` to add to Anki, `⌘P` to hear pronunciation, `Tab` for AI explanation
+
+### Tips
+
+- **Translation images**: Enable "Show Translation Image" in settings. The extension uses Jotoba's English gloss to find relevant Commons images — searching for "fruit" for 実 instead of random kanji matches.
+- **AI language**: Set the "AI Response Language" independently from "Definition Language" — get definitions in Spanish and AI explanations in English, or vice versa.
+- **Anki with images**: Enable "Include Image in Anki Card" to embed translation images in your Anki cards automatically.
 
 ---
 
-## API Reference
-
-This extension consumes three Jotoba API endpoints and the ElevenLabs TTS API:
-
-### `POST /api/search/words`
-
-```json
-{ "query": "日本語", "language": "Spanish", "no_english": false }
-```
-
-### `POST /api/search/kanji`
-
-```json
-{ "query": "日本語", "language": "Spanish" }
-```
-
-### `POST /api/search/sentences`
-
-```json
-{ "query": "日本語", "language": "Spanish", "no_english": false }
-```
-
-Response includes `content`, `furigana` (e.g. `[日本|にほん][語|ご]`), and `translation`.
-
-### ElevenLabs TTS
+## 🏗️ Architecture
 
 ```
-POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}
-Headers: xi-api-key: {key}
-Body: { text: "...", model_id: "eleven_multilingual_v2", voice_settings: {...} }
+                    ┌─────────────────────────────────────┐
+                    │          Vicinae Launcher            │
+                    │  ┌───────────────────────────────┐   │
+                    │  │          Kotoba (TSX)          │   │
+                    │  │  ┌─────┐ ┌──────┐ ┌────────┐  │   │
+                    │  │  │Search│→│Detail│→│Actions │  │   │
+                    │  │  └──┬──┘ └──┬───┘ └────┬───┘  │   │
+                    │  │     │       │          │       │   │
+                    │  │     ▼       ▼          ▼       │   │
+                    │  │   ┌─────────────────────────┐  │   │
+                    │  │   │       API Layer          │  │   │
+                    │  │   │ Jotoba · Google · Gemini │  │   │
+                    │  │   │ ElevenLabs · Wikimedia   │  │   │
+                    │  │   └─────────────────────────┘  │   │
+                    └─────────────────────────────────────┘
 ```
 
----
+### Data Flow
 
-## Development
-
-### Project Structure
-
-```
-kotoba/
-├── assets/
-│   └── icon.svg           # Extension icon
-├── src/
-│   └── kotoba.tsx          # Main source — full extension logic
-├── package.json            # Dependencies, metadata, preferences schema
-├── tsconfig.json           # TypeScript configuration
-└── README.md
-```
-
-### Building
-
-```bash
-npm run build     # Production build → ~/.local/share/vicinae/extensions/kotoba/
-npm run dev       # Watch mode with hot-rebuild
-```
+1. **Search** → 500ms debounce → parallel Jotoba lookups (words + kanji) + Google Translate
+2. **Display** → Results in sections (Translation, Words, Kanji) with inline markdown
+3. **Detail** → Lazy sentence fetching from Jotoba/Tatoeba corpus
+4. **Images** → Jotoba English gloss → Wikimedia Commons search → relevant image
+5. **Anki** → Dynamic field mapping via AnkiConnect schema → per-deck dedup → card created
+6. **Audio** → ElevenLabs multilingual TTS → temp MP3 → system player (ffplay/mpv)
 
 ### Key Technical Decisions
 
-- **Single-file architecture** — The entire extension lives in one TSX file for maintainability. Separation is achieved through function boundaries (API client, Anki helpers, ElevenLabs TTS, UI components).
-- **Dynamic Anki field mapping** — Instead of hardcoding field names, the extension queries AnkiConnect for the model's schema and maps fields by convention. This makes it compatible with any note type.
-- **Lazy sentence fetching** — Example sentences are fetched on-demand when a word is selected, not during the initial search. This keeps searches fast and avoids unnecessary API calls.
-- **Debounced search** — A 500ms debounce prevents API rate limiting and reduces visual flicker during rapid typing.
-- **Per-deck duplicate detection** — Uses AnkiConnect's `duplicateScope: "deck"` option so the same word can exist in different decks without conflict.
-- **Cross-extension compatibility** — Shares Anki configuration with the companion [Japanese Translator](https://github.com/kurojs/vicinae-japanese-translator) extension, so both extensions use the same deck, model, and AnkiConnect port.
+- **Single-file architecture**: ~1500 lines of TSX in one file. Separation through function boundaries.
+- **No build-time framework**: Uses Vicinae's `vici` bundler. Just TypeScript + fetch.
+- **Zero-cost image search**: Wikimedia Commons API + Jotoba English gloss. No API key needed.
+- **Dynamic Anki mapping**: Queries AnkiConnect for field schema instead of hardcoding field names.
+- **Lazy loading**: Example sentences fetched on-demand when selecting a word.
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### Anki: "Not connected"
+Ensure Anki is running and AnkiConnect is installed (plugin code `2055492159`).
 
 ```bash
 curl -X POST http://localhost:8765 \
@@ -243,49 +266,70 @@ curl -X POST http://localhost:8765 \
   -d '{"action": "version", "version": 6}'
 ```
 
-Ensure Anki is running and AnkiConnect is installed (plugin code: `2055492159`).
-
 ### Anki: "Model does not exist"
-
 List available note types:
 ```bash
 curl -X POST http://localhost:8765 \
   -H "Content-Type: application/json" \
   -d '{"action": "modelNames", "version": 6}'
 ```
+Update the preference with an existing model name.
 
-Update the extension preference with an existing model name from the response.
-
-### Audio: "No audio player found"
-
-Install either:
+### Audio not working
 ```bash
 sudo pacman -S ffmpeg    # provides ffplay
 # or
 sudo pacman -S mpv
 ```
 
-### Audio: "ElevenLabs API key not configured"
-
-Add your ElevenLabs API key in the extension preferences. Get one at [elevenlabs.io](https://elevenlabs.io).
-
-### Extension not appearing in Vicinae
-
+### Extension not appearing
 ```bash
 vicinae server    # Restart the Vicinae server
 ```
 
 ---
 
-## License
+## 🧪 Development
 
-MIT — see [LICENSE](./LICENSE).
+### Project Structure
+
+```
+kotoba/
+├── assets/
+│   └── icon.png          # Extension icon (256×256)
+├── src/
+│   └── kotoba.tsx         # Main source — full extension logic
+├── package.json           # Dependencies, metadata, preferences schema
+├── tsconfig.json          # TypeScript configuration
+└── README.md              # This file
+```
+
+### Commands
+
+```bash
+npm run build     # Production build → ~/.local/share/vicinae/extensions/kotoba/
+npm run dev       # Watch mode with hot-rebuild
+```
+
+### Code Quality
+
+```bash
+npx tsc            # TypeScript type check
+npm run build      # Full build
+```
 
 ---
 
-## Acknowledgements
+## 📜 License
+
+MIT — see [LICENSE](./LICENSE).
+
+## 🙏 Acknowledgements
 
 - [Jotoba](https://jotoba.de) — Free multilingual Japanese dictionary API
 - [Vicinae](https://github.com/vicinaehq/vicinae) — Linux launcher platform
 - [AnkiConnect](https://foosoft.net/projects/anki-connect/) — Anki automation API
 - [ElevenLabs](https://elevenlabs.io) — AI text-to-speech
+- [Wikimedia Commons](https://commons.wikimedia.org) — Free image repository
+- [Google Gemini](https://deepmind.google/technologies/gemini/) — AI explanation engine
+- [KanjiVG](https://kanjivg.tagaini.net) — Kanji vector graphics reference
