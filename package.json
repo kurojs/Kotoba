@@ -153,6 +153,14 @@
           "type": "checkbox",
           "required": false,
           "default": false
+        },
+        {
+          "name": "addAudioNote",
+          "title": "Audio Note on Cards",
+          "description": "Add ElevenLabs TTS audio to Anki cards — reads the translation, word, or kanji readings aloud",
+          "type": "checkbox",
+          "required": false,
+          "default": false
         }
       ]
     }

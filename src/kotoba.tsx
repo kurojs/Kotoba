@@ -196,6 +196,9 @@ interface SearchResults {
   words: JotobaWord[];
   kanji: JotobaKanji[];
   translation: string | null;
+  wordSentences?: JotobaSentence[][];
+  wordGlosses?: string[][];
+  kanjiMeanings?: string[];
 }
 
 // ────────────────────────────────────────────
@@ -357,7 +360,7 @@ async function addToAnki(
   front: string,
   back: string,
   port: string = "8765",
-): Promise<void> {
+): Promise<number> {
   const deckName = SECTION_DECKS[section];
   await ensureDeckExists(deckName, port);
 
@@ -395,6 +398,7 @@ async function addToAnki(
   if (result.error) throw new Error(result.error);
   if (!result.result)
     throw new Error("Failed to add note - check Anki error log.");
+  return result.result as number;
 }
 
 // ────────────────────────────────────────────
@@ -470,6 +474,95 @@ async function playElevenLabsAudio(
     await unlink(audioPath).catch(() => {});
     if (err) console.error("Error playing audio:", err);
   });
+}
+
+async function generateTTSBuffer(
+  text: string,
+  apiKey: string,
+  voiceId: string,
+  language?: string,
+): Promise<ArrayBuffer> {
+  if (!apiKey) throw new Error("ElevenLabs API key not configured");
+
+  const body: Record<string, any> = {
+    text,
+    model_id: "eleven_multilingual_v2",
+    voice_settings: { stability: 0.5, similarity_boost: 0.5 },
+  };
+  if (language) body.language = language;
+
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`ElevenLabs TTS failed (${res.status}): ${errText}`);
+  }
+
+  const audioBuffer = await res.arrayBuffer();
+  if (audioBuffer.byteLength === 0) throw new Error("Empty audio generated");
+  return audioBuffer;
+}
+
+async function storeMediaFile(
+  filename: string,
+  data: string,
+  port: string,
+): Promise<void> {
+  const res = await fetch(`http://localhost:${port}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "storeMediaFile",
+      version: 6,
+      params: { filename, data },
+    }),
+  });
+  const result = (await res.json()) as any;
+  if (result.error) throw new Error(result.error);
+}
+
+async function generateSoundTags(
+  audioTexts: { text: string; language?: string }[],
+  apiKey: string,
+  voiceId: string,
+  port: string,
+  enabled: boolean = true,
+): Promise<string[]> {
+  if (!enabled || !apiKey || audioTexts.length === 0) return [];
+
+  const timestamp = Date.now();
+  const tags: string[] = [];
+
+  for (let i = 0; i < audioTexts.length; i++) {
+    try {
+      const text = audioTexts[i].text;
+      if (!text) continue;
+      const audioBuffer = await generateTTSBuffer(
+        text.slice(0, 500),
+        apiKey,
+        voiceId,
+        audioTexts[i].language,
+      );
+      const base64Data = Buffer.from(audioBuffer).toString("base64");
+      const filename = `kotoba_card_${timestamp}_${i}.mp3`;
+      await storeMediaFile(filename, base64Data, port);
+      tags.push(`[sound:${filename}]`);
+    } catch (e) {
+      console.error("Failed to add audio:", e);
+    }
+  }
+
+  return tags;
 }
 
 // ────────────────────────────────────────────
@@ -862,30 +955,18 @@ function KanjiListItem({
   preferences,
   lang,
   onRequestAI,
+  initialTranslatedMeaning,
 }: {
   kanji: JotobaKanji;
   preferences: Preferences;
   lang: Lang;
   onRequestAI: (query: string) => void;
+  initialTranslatedMeaning?: string;
 }) {
-  const [translatedMeaning, setTranslatedMeaning] = useState("");
   const title = kanji.literal;
   const subtitle = formatKanjiReadings(kanji.onyomi, kanji.kunyomi);
-  const detailMd = buildKanjiMarkdown(kanji, lang, translatedMeaning || undefined);
-
-  useEffect(() => {
-    if (lang === "English") return;
-    let cancelled = false;
-    translateText(
-      kanji.meanings.join(", "),
-      LANGUAGE_CODE_MAP[lang] || "en",
-    ).then((t) => {
-      if (!cancelled && t) setTranslatedMeaning(t);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  const kanjiTranslatedMeanings = translatedMeaning || kanji.meanings.join(", ");
+  const detailMd = buildKanjiMarkdown(kanji, lang, initialTranslatedMeaning || undefined);
+  const kanjiTranslatedMeanings = initialTranslatedMeaning || kanji.meanings.join(", ");
   const kanjiStrokeImage = `https://jotoba.de/resource/kanji/frames/${encodeURIComponent(kanji.literal)}`;
 
   const ankiBack = formatAnkiBack("kotoba", {
@@ -931,10 +1012,38 @@ function KanjiListItem({
               }
               const kanjiDeck = "Kotoba Kanji";
               try {
+                const kanjiAudioTexts: { text: string; language?: string }[] = [];
+                if (kanji.onyomi && kanji.onyomi.length > 0)
+                  kanjiAudioTexts.push({ text: kanji.onyomi.join("、"), language: "ja" });
+                if (kanji.kunyomi && kanji.kunyomi.length > 0)
+                  kanjiAudioTexts.push({ text: kanji.kunyomi.join("、"), language: "ja" });
+                const kanjiTags = await generateSoundTags(
+                  kanjiAudioTexts,
+                  preferences.elevenlabsApiKey,
+                  preferences.elevenlabsVoiceId,
+                  preferences.ankiPort,
+                  preferences.addAudioNote,
+                );
+                let kanjiBack = ankiBack;
+                if (kanji.onyomi?.length && kanjiTags[0]) {
+                  kanjiBack = kanjiBack.replace(
+                    `<b>On:</b> ${kanji.onyomi.join("・")}`,
+                    `<b>On:</b> ${kanji.onyomi.join("・")} ${kanjiTags[0]}`,
+                  );
+                }
+                if (kanji.kunyomi?.length) {
+                  const kunIdx = kanji.onyomi?.length ? 1 : 0;
+                  if (kanjiTags[kunIdx]) {
+                    kanjiBack = kanjiBack.replace(
+                      `<b>Kun:</b> ${kanji.kunyomi.join("・")}`,
+                      `<b>Kun:</b> ${kanji.kunyomi.join("・")} ${kanjiTags[kunIdx]}`,
+                    );
+                  }
+                }
                 await addToAnki(
                   "kanji",
                   kanji.literal,
-                  ankiBack,
+                  kanjiBack,
                   preferences.ankiPort,
                 );
                 await showToast({
@@ -1022,68 +1131,24 @@ function WordListItem({
   preferences,
   searchText,
   onRequestAI,
+  initialSentences,
+  initialTranslatedGlosses,
 }: {
   word: JotobaWord;
   lang: Lang;
   preferences: Preferences;
   searchText: string;
   onRequestAI: (query: string) => void;
+  initialSentences?: JotobaSentence[];
+  initialTranslatedGlosses?: string[];
 }) {
-  const [sentences, setSentences] = useState<JotobaSentence[]>([]);
-  const [sentencesLoading, setSentencesLoading] = useState(false);
-  const [translatedGlosses, setTranslatedGlosses] = useState<string[]>([]);
   const sense = getBestSense(word, lang);
-  const displayGlosses = translatedGlosses.length > 0 ? translatedGlosses : sense.glosses;
+  const displayGlosses = (initialTranslatedGlosses && initialTranslatedGlosses.length > 0) ? initialTranslatedGlosses : sense.glosses;
   const title = formatWordTitle(word);
   const subtitle = displayGlosses[0];
   const displaySense = { ...sense, glosses: displayGlosses };
+  const sentences = initialSentences || [];
   const detailMd = buildWordFullDetailMarkdown(word, displaySense, sentences, lang);
-
-  useEffect(() => {
-    let cancelled = false;
-    const query = word.reading.kanji || word.reading.kana;
-    if (!query) return;
-    setSentencesLoading(true);
-    (async () => {
-      const raw = await fetchSentences(query, lang);
-      if (cancelled) return;
-      let result = raw;
-      if (lang !== "English" && result.length > 0) {
-        const pending = result
-          .map((s, i) => ({ s, i }))
-          .filter(({ s }) => {
-            if (s.translation && s.eng && s.translation === s.eng) return true;
-            if (s.translation && !/[^\x20-\x7E\s]/.test(s.translation)) return true;
-            return false;
-          });
-        if (pending.length > 0) {
-          const code = LANGUAGE_CODE_MAP[lang] || "en";
-          for (const p of pending) {
-            if (cancelled) return;
-            const t = await translateText(p.s.translation, code);
-            if (t) result[p.i] = { ...result[p.i], translation: t };
-          }
-        }
-      }
-      if (!cancelled) {
-        setSentences(result);
-        setSentencesLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (lang === "English" || sense.language !== "English" || sense.glosses.length === 0) return;
-    let cancelled = false;
-    translateText(
-      sense.glosses.join("; "),
-      LANGUAGE_CODE_MAP[lang] || "en",
-    ).then((t) => {
-      if (!cancelled && t) setTranslatedGlosses(t.split(/;\s*/));
-    });
-    return () => { cancelled = true; };
-  }, []);
 
   const pitchStr = word.pitch && word.pitch.length > 0
     ? (() => {
@@ -1140,10 +1205,21 @@ function WordListItem({
               }
               const wordDeck = "Kotoba Words";
               try {
-                  await addToAnki(
-                    "word",
-                    word.reading.kanji || word.reading.kana,
-                  ankiBack,
+                const wordAudioKana = word.reading.kana;
+                const wordTags = await generateSoundTags(
+                  [{ text: wordAudioKana, language: "ja" }],
+                  preferences.elevenlabsApiKey,
+                  preferences.elevenlabsVoiceId,
+                  preferences.ankiPort,
+                  preferences.addAudioNote,
+                );
+                const wordBack = wordTags.length > 0
+                  ? ankiBack.replace("</b>", `</b>${wordTags[0]}`)
+                  : ankiBack;
+                const noteId = await addToAnki(
+                  "word",
+                  query,
+                  wordBack,
                   preferences.ankiPort,
                 );
                 await showToast({
@@ -1304,7 +1380,52 @@ export default function Command() {
           searchKanji(debouncedText, userLang),
           translateViaGoogle(debouncedText, userLang),
         ]);
-        setResults({ words, kanji, translation });
+
+        const wordLimit = 8;
+        const kanjiLimit = 5;
+        const topWords = words.slice(0, wordLimit);
+        const topKanji = kanji.slice(0, kanjiLimit);
+
+        const wordSentencePromises = topWords.map(async (w) => {
+          const q = w.reading.kanji || w.reading.kana;
+          const raw = await fetchSentences(q, userLang).catch(() => [] as JotobaSentence[]);
+          if (userLang === "English" || raw.length === 0) return raw;
+          const code = LANGUAGE_CODE_MAP[userLang] || "en";
+          const result = [...raw];
+          for (let i = 0; i < result.length; i++) {
+            const s = result[i];
+            const needsTranslation = (s.translation && s.eng && s.translation === s.eng) ||
+              (s.translation && !/[^\x20-\x7E\s]/.test(s.translation));
+            if (needsTranslation) {
+              const t = await translateText(s.translation, code);
+              if (t) result[i] = { ...result[i], translation: t };
+            }
+          }
+          return result;
+        });
+
+        const wordGlossPromises = topWords.map(async (w) => {
+          if (userLang === "English") return [] as string[];
+          const sense = getBestSense(w, userLang);
+          if (sense.language === userLang && sense.glosses.length > 0) return sense.glosses;
+          const engSense = w.senses.find(s => s.language === "English");
+          if (!engSense || engSense.glosses.length === 0) return [] as string[];
+          const t = await translateText(engSense.glosses.join("; "), LANGUAGE_CODE_MAP[userLang] || "en");
+          return t ? t.split(/;\s*/) : [];
+        });
+
+        const kanjiMeaningPromises = topKanji.map((k) => {
+          if (userLang === "English") return Promise.resolve("");
+          return translateText(k.meanings.join(", "), LANGUAGE_CODE_MAP[userLang] || "en");
+        });
+
+        const [wordSentences, wordGlosses, kanjiMeanings] = await Promise.all([
+          Promise.all(wordSentencePromises),
+          Promise.all(wordGlossPromises),
+          Promise.all(kanjiMeaningPromises),
+        ]);
+
+        setResults({ words, kanji, translation, wordSentences, wordGlosses, kanjiMeanings });
       } catch (error) {
         await showToast({
           style: Toast.Style.Failure,
@@ -1429,7 +1550,17 @@ export default function Command() {
                           const furiganaSuffix = hasFurigana
                             ? `\n\n> ${furiganaText}`
                             : "";
-                          const backContent = `${results.translation}${furiganaSuffix}`;
+                          const rawBack = `${results.translation}${furiganaSuffix}`;
+                          const transTags = await generateSoundTags(
+                            [{ text: debouncedText, language: "ja" }],
+                            preferences.elevenlabsApiKey,
+                            preferences.elevenlabsVoiceId,
+                            preferences.ankiPort,
+                            preferences.addAudioNote,
+                          );
+                          const backContent = transTags.length > 0
+                            ? `${transTags[0]}<br>${rawBack}`
+                            : rawBack;
                           await addToAnki(
                             "translation",
                             debouncedText,
@@ -1509,6 +1640,8 @@ export default function Command() {
                   preferences={preferences}
                   searchText={debouncedText}
                   onRequestAI={openAI}
+                  initialSentences={results.wordSentences?.[idx]}
+                  initialTranslatedGlosses={results.wordGlosses?.[idx]}
                 />
               ))}
             </List.Section>
@@ -1526,6 +1659,7 @@ export default function Command() {
                   preferences={preferences}
                   lang={userLang}
                   onRequestAI={openAI}
+                  initialTranslatedMeaning={results.kanjiMeanings?.[idx]}
                 />
               ))}
             </List.Section>
