@@ -71,6 +71,8 @@ const UI: Record<string, Record<string, string>> = {
     errorAdding: "Anki error",
     failPlayAudio: "Failed to play audio",
     searchError: "Search failed",
+    noInternet: "No internet connection",
+    noInternetMsg: "Check your connection and try again",
     copyResponse: "Copy Response",
     explainWithAI: "Explain with AI",
     aiLoading: "Generating explanation",
@@ -123,6 +125,8 @@ const UI: Record<string, Record<string, string>> = {
     furiganaError: "Furigana no disponible",
     aiExplainError: "Explicación no disponible",
     ttsError: "Audio no disponible",
+    noInternet: "Sin conexión a internet",
+    noInternetMsg: "Revisá tu conexión e intentá de nuevo",
   },
 };
 
@@ -1354,6 +1358,7 @@ export default function Command() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [networkError, setNetworkError] = useState(false);
 
   useEffect(() => {
     if (!preferences.autoLoadText) return;
@@ -1393,6 +1398,7 @@ export default function Command() {
       const token = ++searchToken.current;
       setIsLoading(true);
       setHasSearched(true);
+      setNetworkError(false);
       try {
         const [words, kanji, translation] = await Promise.all([
           searchWords(debouncedText, userLang),
@@ -1448,9 +1454,11 @@ export default function Command() {
           setResults({ words, kanji, translation, wordSentences, wordGlosses, kanjiMeanings });
         }
       } catch (error) {
+        const isNetwork = error instanceof TypeError;
+        setNetworkError(isNetwork);
         await showToast({
           style: Toast.Style.Failure,
-          title: t("searchError", lang),
+          title: isNetwork ? t("noInternet", lang) : t("searchError", lang),
         });
       } finally {
         setIsLoading(false);
@@ -1515,6 +1523,12 @@ export default function Command() {
           icon={Icon.MagnifyingGlass}
           title={t("search", userLang)}
           description={t("typeToSearch", userLang)}
+        />
+      ) : networkError ? (
+        <List.EmptyView
+          icon={{ source: Icon.Warning, tintColor: Color.Red }}
+          title={t("noInternet", userLang)}
+          description={t("noInternetMsg", userLang)}
         />
       ) : !hasResults && !showTranslation ? (
         <List.EmptyView

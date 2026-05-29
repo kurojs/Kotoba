@@ -11,11 +11,11 @@
 
 | Section | Description |
 |---------|-------------|
-| **🔍 Word Search** | Look up any Japanese word — get definitions, readings, pitch accent, part-of-speech, and example sentences |
-| **🗾 Kanji Analysis** | Stroke order diagrams, JLPT level, grade, frequency, radical decomposition, and on'yomi/kun'yomi readings |
+| **Word Search** | Look up any Japanese word — get definitions, readings, pitch accent, part-of-speech, and example sentences |
+| **Kanji Analysis** | Stroke order diagrams, JLPT level, grade, frequency, radical decomposition, and on'yomi/kun'yomi readings |
 | **Translation** | Google Translate integration for instant Japanese → your language translations |
-| **👾 AI Explanations** | Gemini-powered explanations for words, kanji, and phrases — customize the language and model |
-| **📦 Anki Export** | One-click card creation (`⌘A`) with per-deck duplicate detection. Uses Anki's built-in Basic model |
+| **AI Explanations** | Gemini-powered explanations for words, kanji, and phrases — customize the language and model |
+| **Anki Export** | One-click card creation (`⌘A`) with per-deck duplicate detection. Uses Anki's built-in Basic model |
 | **Text-to-Speech** | ElevenLabs multilingual TTS — hear Japanese pronunciation with a single keystroke (`⌘P`) |
 | **Clipboard** | Auto-loads selected text on launch; copy word, reading, or definition with keyboard shortcuts |
 
@@ -63,7 +63,7 @@
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### AUR (recommended)
 
@@ -145,7 +145,7 @@ Access preferences through Vicinae's extension settings panel (`Extensions → K
 | **AI Response Language** | `Spanish` | Language for AI explanations. 21 languages supported |
 | **Custom AI Prompt** | — | Extra instructions for the AI (personality, format, focus areas) |
 | **AI Voice ID** | `21m00Tcm4TlvDq8ikWAM` | ElevenLabs voice for reading AI responses aloud |
-| **Show Furigana** | `false` | Adds furigana readings via Gemini — consumes AI tokens on each search |
+| **Show Furigana** | `false` | Adds furigana readings above translations — uses local kuroshiro+kuromoji |
 
 ---
 
@@ -173,7 +173,7 @@ Access preferences through Vicinae's extension settings panel (`Extensions → K
 ### Tips
 
 - **AI language**: Set the "AI Response Language" independently from "Definition Language" — get definitions in Spanish and AI explanations in English, or vice versa.
-- **Furigana**: Enable "Show Furigana" in settings. Each search calls Gemini to annotate kanji — consumes tokens.
+- **Furigana**: Enable "Show Furigana" in settings. Readings are generated locally using kuroshiro+kuromoji — no API key needed.
 - **TTS voice**: Use a native Japanese ElevenLabs voice for best pronunciation results.
 
 ---
