@@ -73,6 +73,8 @@ const UI: Record<string, Record<string, string>> = {
     searchError: "Search failed",
     noInternet: "No internet connection",
     noInternetMsg: "Check your connection and try again",
+    apiDown: "Jotoba is unavailable",
+    apiDownMsg: "The Jotoba server is down. Waiting for it to come back.",
     copyResponse: "Copy Response",
     explainWithAI: "Explain with AI",
     aiLoading: "Generating explanation",
@@ -127,6 +129,8 @@ const UI: Record<string, Record<string, string>> = {
     ttsError: "Audio no disponible",
     noInternet: "Sin conexión a internet",
     noInternetMsg: "Revisá tu conexión e intentá de nuevo",
+    apiDown: "Jotoba no disponible",
+    apiDownMsg: "El server de Jotoba está caído. Esperando a que vuelva.",
   },
 };
 
@@ -1455,10 +1459,16 @@ export default function Command() {
         }
       } catch (error) {
         const isNetwork = error instanceof TypeError;
-        setNetworkError(isNetwork);
+        const isApiDown = isNetwork
+          && error.cause
+          && typeof error.cause === "object"
+          && "code" in error.cause
+          && error.cause.code === "ECONNREFUSED";
+        setNetworkError(isNetwork && !isApiDown);
         await showToast({
           style: Toast.Style.Failure,
-          title: isNetwork ? t("noInternet", lang) : t("searchError", lang),
+          title: isApiDown ? t("apiDown", userLang) : isNetwork ? t("noInternet", userLang) : t("searchError", userLang),
+          message: isApiDown ? t("apiDownMsg", userLang) : isNetwork ? t("noInternetMsg", userLang) : undefined,
         });
       } finally {
         setIsLoading(false);
